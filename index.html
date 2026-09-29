@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to SVG Converter</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            box-sizing: border-box;
+            font-family: sans-serif;
+            background-color: #222;
+            color: #ddd;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+            box-sizing: border-box;
+        }
+        .column {
+            flex: 1 1 0;
+            padding: 10px;
+        }
+        #file-input {
+            display: none;
+        }
+        #drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px auto;
+        }
+        #preview-container {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px auto;
+        }
+        #drop-area.highlight {
+            border-color: purple;
+        }
+        #svg-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .input-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .input-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+    </style>
+</head>
+<body>
+    <input type="file" id="file-input" accept="image/png, image/jpeg">
+    <div class='container'>
+        <div id="drop-area" class='column'>
+            <img id="image-preview" style="max-width: 100%; max-height: 300px; border-radius: 8px;" alt="Drag & Drop an image here." />
+        </div>
+        <!-- Container for image preview -->
+        <div id="preview-container" class='column'>
+            <img id="preprocess-image" style="max-width: 100%; max-height: 300px; border-radius: 8px;" alt="Outline mask will appear here." />
+            <table class="input-table">
+                <tr>
+                    <td>Blur ksize</td>
+                    <td><input id="blur_ksize" type="number" name="blur_ksize" value="1" min="1" step="1"></td>
+                </tr>
+                <tr>
+                    <td>Otsu threshold</td>
+                    <td>
+                        <span class="row">
+                            <input id="otsu" type="checkbox" name="otsu">
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Saturation threshold (0–255)</td>
+                    <td><input id="sat_thresh" type="number" name="sat_thresh" value="40" min="0" max="255" step="1"></td>
+                </tr>
+                <tr>
+                    <td>Value threshold (0–255)</td>
+                    <td><input id="val_thresh" type="number" name="val_thresh" value="20" min="0" max="255" step="1"></td>
+                </tr>
+                <tr>
+                    <td>
+                        <button id="process-button">Process Image</button>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <div id="svg-column" class="column">
+            <div id="svg-container" style="max-width: 100%;">
+                <p>SVG will be displayed here</p>
+            </div>
+            <p> <button id="download-button">Download SVG</button> </p>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const dropArea = document.getElementById('drop-area');
+        const processButton = document.getElementById('process-button');
+        const downloadButton = document.getElementById('download-button');
+        const svgContainer = document.getElementById('svg-container');
+        const otsuCheck = document.getElementById('otsu');
+        const blurksizeVal = document.getElementById('blur_ksize');
+        const satThreshVal = document.getElementById('sat_thresh');
+        const valThreshVal = document.getElementById('val_thresh');
+        const ppImage = document.getElementById('preprocess-image');
+        const previewImg = document.getElementById("image-preview");
+
+        fileInput.addEventListener('change', handleFileSelect, false);
+
+        otsuCheck.addEventListener('change', handlePreprocess, false);
+        blurksizeVal.addEventListener('change', handlePreprocess, false);
+        satThreshVal.addEventListener('change', handlePreprocess, false);
+        valThreshVal.addEventListener('change', handlePreprocess, false);
+
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropArea.classList.add('highlight');
+        }, false);
+
+        dropArea.addEventListener('dragleave', (e) => {
+            dropArea.classList.remove('highlight');
+        }, false);
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        processButton.addEventListener('click', processImage, false);
+
+        downloadButton.addEventListener('click', downloadSVG, false);
+
+        document.addEventListener('paste', (event) => {
+            const items = event.clipboardData?.items;
+            if (!items) return;
+
+            for (let i = 0; i < items.length; i++) {
+                // Check if the pasted item is an image (PNG, JPEG, etc.)
+                if (items[i].type.startsWith('image/')) {
+                    // Extract the File object from clipboard
+                    const pastedFile = items[i].getAsFile();
+
+                    if (pastedFile) {
+                        event.preventDefault(); // Stop default paste actions
+                        
+                        // Optional UI feedback
+                        console.log("Pasted file:", pastedFile.name, pastedFile.type);
+
+                        // Send to your existing processImage function
+                        processImage(pastedFile);
+                    }
+                    break; // Stop checking after finding the first image
+                }
+            }
+        });
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                handleImage(files[0]);
+            }
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropArea.classList.remove('highlight');
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                handleImage(files[0]);
+            }
+        }
+        
+        // this is the entry function that processes a dropped, copied, or
+        // loaded file  into the page and does the first round processing.
+        async function handleImage(file) {
+            svgContainer.innerHTML = "<p>Your image will appear here</p>";
+            try {
+                // Revoke the prior URLs as they are no longer valid
+                if (previewImg.src) {
+                    URL.revokeObjectURL(previewImg.src);
+                }
+                if (ppImage.src) {
+                    URL.revokeObjectURL(ppImage.src);
+                }
+
+                const imageUrl = URL.createObjectURL(file);
+                previewImg.src = imageUrl;
+
+                // pause so that the image can be loaded
+                await previewImg.decode();
+
+                // Trigger the processing
+                console.log('triggering preprocessing');
+                await handlePreprocess();
+                console.log('triggering processing');
+                await processImage();
+            } catch (err) {
+                console.error('Image pipeline failed:', err);
+                svgContainer.innerHTML = "<p>Processing failed.</p>";
+            }
+        }
+
+        async function resolveImageData() {
+            // If the imageData is not a File, we fall back to the current preview
+            // image
+            if (previewImg.src) {
+                // capture the src (a URL)
+                console.log("previewImg contains a src, converting to File");
+                const url = previewImg.src;
+                const imageData = await urlToFile(url);
+                return imageData;
+            } else {
+                return null;
+            }
+        }
+
+        async function resolveMaskData() {
+            console.log("Extracting prior image data from preview");
+            if (ppImage && ppImage.src) {
+                // capture the src (a URL)
+                console.log("previewImg contains a src, converting to File");
+                const url = ppImage.src;
+                const imageData = await urlToFile(url);
+                return imageData;
+            } else {
+                console.log("src not found, unable to generate image data");
+                return null;
+            }
+        }
+
+        async function handlePreprocess() {
+            imageData = await resolveImageData();
+            
+            // if there is no image data then return
+            if (imageData === null){
+                svgContainer.innerHTML = "<p>Drop in an image to process.</p>";
+                return; 
+            }
+
+            var formData = new FormData();
+            formData.append('file', imageData);
+
+            // set up the preprocess so that the user can see
+            // what the preprocessing is doing
+
+            // Remaining params are query parameters
+            const params = new URLSearchParams();
+            params.set("blur_ksize", blurksizeVal.value);
+            params.set("otsu", otsuCheck.checked);
+            params.set("sat_thresh", satThreshVal.value);
+            params.set("val_thresh", valThreshVal.value);
+
+            const ppresponse = await
+                fetch(`/preprocess?${params.toString()}`, {
+                    method: "POST",
+                    body: formData,
+                });
+            if (!ppresponse.ok) {
+                alert(`HTTP ${ppresponse.status}: ${await ppresponse.text()}`);
+            }
+
+            const ppblob = await ppresponse.blob();
+            const url = URL.createObjectURL(ppblob);
+            ppImage.src = url;
+            ppImage.hidden = false;
+            console.log('ppImage set');
+        }
+        
+        async function urlToFile(url, filename = "image.png") {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            return new File([blob], filename, { 
+                type: blob.type || "image/png"
+            });
+        }
+
+        async function processImage() {
+            // for the full processing, we resend the mask data that was
+            // generated by preprocessing along with the original image (we could
+            // use sessions for this in the future, but these are local and
+            // might be small enough that it won't matter). This then runs the
+            // bmp to svg code and fills the colors
+            const imageData = await resolveImageData(null);
+
+            if (imageData === null) {
+                svgContent.innerHTML = "<p>No Image Loaded.</p>";
+            }
+            const maskData = await resolveMaskData();
+            if (maskData === null) {
+                svgContent.innerHTML = "<p>No Mask Loaded.</p>";
+            }
+
+            var formData = new FormData();
+            formData.append('file', imageData);
+            formData.append('mask', maskData);
+
+            const response = await fetch('/process', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                body: formData
+            });
+            const data = await response.json();
+            svgContainer.innerHTML = `<pre>${data.svg}</pre>`;
+        }
+
+        function downloadSVG() {
+            const svgContent = svgContainer.innerHTML;
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'output.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

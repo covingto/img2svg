@@ -375,18 +375,5 @@ def preprocess_for_vectorization(
 
     return output_image
 
-def process_with_starvector(image: Image) -> str:
-    inputs = processor(image, return_tensors="pt")
-    pixel_values = inputs['pixel_values'].cuda()
-
-    if pixel_values.ndim == 3:
-        pixel_values = pixel_values.unsqueeze(0)
-
-    batch = {"image": pixel_values}
-
-    with torch.no_grad():
-        svg_content = starvector.generate_im2svg(batch,
-                                              max_length=8000)[0]
-    return svg_content
 
 

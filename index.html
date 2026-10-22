@@ -298,11 +298,11 @@
             const imageData = await resolveImageData(null);
 
             if (imageData === null) {
-                svgContent.innerHTML = "<p>No Image Loaded.</p>";
+                svgContainer.innerHTML = "<p>No Image Loaded.</p>";
             }
             const maskData = await resolveMaskData();
             if (maskData === null) {
-                svgContent.innerHTML = "<p>No Mask Loaded.</p>";
+                svgContainer.innerHTML = "<p>No Mask Loaded.</p>";
             }
 
             var formData = new FormData();
@@ -317,7 +317,7 @@
                 body: formData
             });
             const data = await response.json();
-            svgContainer.innerHTML = `<pre>${data.svg}</pre>`;
+            svgContainer.innerHTML = `${data.svg}`;
         }
 
         function downloadSVG() {
